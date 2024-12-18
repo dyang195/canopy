@@ -1,0 +1,173 @@
+.tree-container {
+    padding: 16px;
+    font-family: system-ui, -apple-system, sans-serif;
+    min-width: 300px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.tree-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    padding: 10px;
+    border-bottom: 1px solid #e0e0e0;
+    z-index: 1000;
+    margin: -16px -16px 0 -16px;
+}
+
+.header-title {
+    font-size: 16px;
+    margin: 0 0 10px 0;
+}
+
+.header-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.search-input {
+    flex-grow: 1;
+    padding: 6px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.tree-node {
+    position: relative;
+    margin-left: 24px;
+}
+
+.tree-node::before {
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e0e0e0;
+}
+
+.tree-node:last-child::before {
+    height: 20px;
+}
+
+.tab-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 6px;
+    background: white;
+    transition: background-color 0.2s;
+    position: relative;
+}
+
+.tab-item::before {
+    content: '';
+    position: absolute;
+    left: -16px;
+    top: 50%;
+    width: 16px;
+    height: 2px;
+    background: #e0e0e0;
+}
+
+.tab-item:hover {
+    background: #f5f5f5;
+}
+
+.expander-button {
+    padding: 2px 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 10px;
+    color: #666;
+    margin-right: 4px;
+}
+
+.tab-favicon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.tab-title {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #333;
+    font-size: 13px;
+}
+
+.tab-actions {
+    display: none;
+    gap: 4px;
+    margin-left: 8px;
+}
+
+.tab-item:hover .tab-actions {
+    display: flex;
+}
+
+.button {
+    padding: 4px 8px;
+    background: #e0e0e0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #333;
+}
+
+.button:hover {
+    background: #d0d0d0;
+}
+
+.tree-container {
+    padding: 16px;
+    font-family: system-ui, -apple-system, sans-serif;
+    min-width: 300px;
+    max-width: 300px; /* Fixed width */
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.tab-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 6px;
+    background: white;
+    transition: background-color 0.2s;
+    position: relative;
+    overflow: hidden; /* Prevent content from expanding */
+}
+
+.tab-title {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #333;
+    font-size: 13px;
+    margin-right: 8px; /* Space for buttons */
+}
+
+.tab-actions {
+    display: none;
+    gap: 4px;
+    position: absolute; /* Position absolutely */
+    right: 8px; /* Align to right */
+    background: inherit; /* Match parent background */
+    padding-left: 8px; /* Some padding before buttons */
+}
+
+.tab-item:hover .tab-actions {
+    display: flex;
+}
