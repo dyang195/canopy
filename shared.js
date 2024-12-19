@@ -2,13 +2,14 @@ class TabTreeView {
     constructor(containerId, mode = 'popup') {
         this.container = document.getElementById(containerId);
         this.mode = mode;
+        this.windowId = '';
         this.searchTerm = '';
         this.init();
     }
 
     async init() {
         await this.loadTree();
-        this.createHeader();
+        await this.createHeader();
         this.render();
         this.setupEventListeners();
     }
@@ -19,7 +20,7 @@ class TabTreeView {
         this.expandedStates = expandedStates || {};
     }
 
-    createHeader() {
+    async createHeader() {
         const header = document.createElement('div');
         header.className = 'tree-header';
         
@@ -39,14 +40,21 @@ class TabTreeView {
             this.render();
         });
         
+        const [tab] = await chrome.tabs.query({});
+        this.windowId = tab.windowId
+
         if (this.mode === 'popup') {
             const viewToggle = document.createElement('button');
             viewToggle.className = 'button';
             viewToggle.textContent = 'Open in Side Panel';
-            viewToggle.onclick = () => {
-                chrome.sidePanel.open();
-                window.close();
-            };
+            // viewToggle.onclick.addListener((tab) => {
+            //     chrome.sidePanel.open({ windowId: tab.windowId });
+            //     window.close();
+            // });
+            viewToggle.onclick = async() => {
+                await chrome.sidePanel.open({ windowId: this.windowId });
+                await window.close();
+            }
             controls.appendChild(viewToggle);
         }
         

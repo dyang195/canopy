@@ -31,42 +31,45 @@ function buildTreeStructure(tabs) {
 }
 
 // Initialize tree with existing tabs
-chrome.tabs.query({}, (tabs) => {
+async function initializeTabs() {
+    const tabs = await chrome.tabs.query({});
     const rootTabs = buildTreeStructure(tabs);
-    chrome.storage.local.set({ 
+    await chrome.storage.local.set({ 
+        tabTree: rootTabs,
+        expandedStates: expandedStates 
+    });
+}
+initializeTabs();
+
+// Listen for tab creation
+chrome.tabs.onCreated.addListener(async (tab) => {
+    const tabs = await chrome.tabs.query({});
+    const rootTabs = buildTreeStructure(tabs);
+    await chrome.storage.local.set({ 
         tabTree: rootTabs,
         expandedStates: expandedStates 
     });
 });
 
-// Listen for tab creation
-chrome.tabs.onCreated.addListener((tab) => {
-    chrome.tabs.query({}, (tabs) => {
+// Listen for tab closing
+chrome.tabs.onRemoved.addListener(async (tab) => {
+    const tabs = await chrome.tabs.query({});
+    const rootTabs = buildTreeStructure(tabs);
+    await chrome.storage.local.set({ 
+        tabTree: rootTabs,
+        expandedStates: expandedStates 
+    });
+});
+
+chrome.tabs.on
+// Listen for tab updates
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.title || changeInfo.url || changeInfo.favIconUrl) {
+        const tabs = await chrome.tabs.query({});
         const rootTabs = buildTreeStructure(tabs);
-        chrome.storage.local.set({ 
+        await chrome.storage.local.set({ 
             tabTree: rootTabs,
             expandedStates: expandedStates 
         });
-    });
-});
-
-// Listen for tab updates
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.title || changeInfo.url || changeInfo.favIconUrl) {
-        chrome.tabs.query({}, (tabs) => {
-            const rootTabs = buildTreeStructure(tabs);
-            chrome.storage.local.set({ 
-                tabTree: rootTabs,
-                expandedStates: expandedStates 
-            });
-        });
     }
-});
-
-chrome.action.onClicked.addListener((tab) => {
-    // First try to get the current state
-    chrome.sidePanel.getOptions({}, (options) => {
-        const isOpen = options?.enabled ?? false;
-        chrome.sidePanel.setOptions({ enabled: !isOpen });
-    });
 });
