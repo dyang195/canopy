@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Canopy",
+    "name": "canopy-tab-visualizer",
     "version": "1.0",
     "description": "Visualize your tab relationships in a tree structure",
     "permissions": [
