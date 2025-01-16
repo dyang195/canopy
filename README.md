@@ -1,11 +1,11 @@
 # Canopy
 
-A Chrome extension that visualizes open tabs in a tree hierarchy.  
+Canopy lets you visualizes open tabs in a tree hierarchy, constructed by the history of your tab opening. 
 Allows collapsing, searching, and easy navigation/closing of tabs.
 
 ## Features
 
-- **Hierarchy**: Tracks parent/child relationships using its own internal storage, so tabs stay organized even if Chrome discards `openerTabId`.  
+- **Hierarchy**: Tracks parent/child relationships based on which tab you open new tabs from.
 - **Search**: Quickly filter open tabs by title.  
 - **Expand/Collapse**: Toggle branches to manage large sets of tabs.  
 - **Side Panel Support**: Optionally open the UI in Chrome's side panel (Chrome 114+).  
@@ -32,7 +32,7 @@ Allows collapsing, searching, and easy navigation/closing of tabs.
 ## Notes
 
 - Closing a parent tab automatically reassigns its children to the parent's parent (i.e., they move up one level).  
-- The "side panel" requires Chrome 114 or later. If you remove `"default_popup"` from `manifest.json`, Chrome won’t open a popup on icon click, but you can open the side panel via the **Extensions** menu → **Tab Tree Visualizer** → **Open in side panel**.
+- The "side panel" requires Chrome 114 or later. If you remove `"default_popup"` from `manifest.json`, Chrome won’t open a popup on icon click, but you can open the side panel via the **Extensions** menu → **Canopy** → **Open in side panel**.
 
 ## Contributing
 

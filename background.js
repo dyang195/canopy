@@ -1,132 +1,253 @@
-let expandedStates = {};
-let parentMap = {}; // childTabId => parentTabId
-
-async function loadStorage() {
-    const { storedParentMap, storedExpandedStates } = await chrome.storage.local.get([
-        'storedParentMap',
-        'storedExpandedStates'
-    ]);
-    parentMap = storedParentMap || {};
-    expandedStates = storedExpandedStates || {};
-}
-
-// Save both parentMap and expandedStates to local storage
-async function saveStorage() {
-    await chrome.storage.local.set({
-        storedParentMap: parentMap,
-        storedExpandedStates: expandedStates
-    });
+/**
+ * Loads the windowTrees object from local storage.
+ * 
+ * windowTrees = {
+ *   [windowId]: {
+ *     parentMap: { [tabId]: parentTabId },
+ *     expandedStates: { [tabId]: boolean },
+ *     tabTree: [ ...root nodes... ]
+ *   },
+ *   ...
+ * }
+ */
+async function loadWindowTrees() {
+    const { windowTrees } = await chrome.storage.local.get(['windowTrees']);
+    return windowTrees || {};
 }
 
 /**
- * Builds a hierarchical tree of tabs from parentMap rather than tab.openerTabId
+ * Saves the windowTrees object back to local storage.
  */
-function buildTreeStructure(tabs) {
-    // Convert tabs array to a dictionary for quick lookups
+async function saveWindowTrees(windowTrees) {
+    await chrome.storage.local.set({ windowTrees });
+}
+
+/**
+ * Cleans out parentMap and expandedStates for tabs that no longer exist in the given window.
+ */
+function cleanupDeadTabs(tabs, parentMap, expandedStates) {
+    const validTabIds = new Set(tabs.map(t => t.id));
+
+    // Remove parentMap entries if the child or the parent doesn't exist
+    for (const childId in parentMap) {
+        const childIdNum = parseInt(childId, 10);
+        const parentIdNum = parseInt(parentMap[childId], 10);
+        if (!validTabIds.has(childIdNum) || !validTabIds.has(parentIdNum)) {
+            delete parentMap[childId];
+        }
+    }
+
+    // Remove expandedStates if the tab doesn't exist
+    for (const tabId in expandedStates) {
+        const tabIdNum = parseInt(tabId, 10);
+        if (!validTabIds.has(tabIdNum)) {
+            delete expandedStates[tabId];
+        }
+    }
+}
+
+/**
+ * Rebuilds tabTree for a single window using parentMap & expandedStates.
+ * Cleans up "ghost" tabs before building.
+ */
+function buildTreeStructureForWindow(windowId, tabs, parentMap, expandedStates) {
+    // 1) Remove stale references
+    cleanupDeadTabs(tabs, parentMap, expandedStates);
+
+    // 2) Convert tabs to a dictionary
     const tabDict = {};
-    tabs.forEach(tab => {
+    for (const tab of tabs) {
         tabDict[tab.id] = {
             id: tab.id,
             title: tab.title,
             url: tab.url,
             favIconUrl: tab.favIconUrl,
             children: [],
-            expanded: expandedStates[tab.id] !== undefined ? expandedStates[tab.id] : true
+            expanded: expandedStates[tab.id] !== undefined
+                ? expandedStates[tab.id]
+                : true
         };
-    });
+    }
 
-    // Build the hierarchy using parentMap
+    // 3) Build a list of root nodes or children
     const rootTabs = [];
-
-    tabs.forEach(tab => {
+    for (const tab of tabs) {
         const parentId = parentMap[tab.id];
         if (parentId && tabDict[parentId]) {
-            // If we have a parent, attach this tab as a child
+            // valid parent => attach as child
             tabDict[parentId].children.push(tabDict[tab.id]);
         } else {
-            // No known parent => root
+            // no parent => root
             rootTabs.push(tabDict[tab.id]);
         }
-    });
-
+    }
     return rootTabs;
 }
 
-// Move all children of `deletedTabId` to become children of `deletedTabId`’s parent
-// That means they "move up" one level instead of going all the way to the root.
-function reassignChildren(deletedTabId) {
-    // The parent of the one being deleted
+/**
+ * Move all children of `deletedTabId` up one level in this window’s parentMap.
+ */
+function reassignChildren(windowData, deletedTabId) {
+    const { parentMap } = windowData;
     const grandParent = parentMap[deletedTabId];
-    // Loop all child->parent relationships
     for (const childId in parentMap) {
         if (parentMap[childId] === deletedTabId) {
             if (grandParent) {
-                // Child becomes child of the parent's parent
                 parentMap[childId] = grandParent;
             } else {
-                // No grandparent => child becomes root
                 delete parentMap[childId];
             }
         }
     }
-    // Finally remove the parent itself
     delete parentMap[deletedTabId];
 }
 
-// Initialize extension with current tabs
-async function initializeTabs() {
-    await loadStorage();
-    const tabs = await chrome.tabs.query({});
-    const rootTabs = buildTreeStructure(tabs);
-    await chrome.storage.local.set({ tabTree: rootTabs });
+/**
+ * Initialize data for all open windows on extension startup.
+ */
+async function initializeAllWindows() {
+    const windowTrees = await loadWindowTrees();
+    const allWindows = await chrome.windows.getAll();
+
+    for (const w of allWindows) {
+        if (!windowTrees[w.id]) {
+            windowTrees[w.id] = {
+                parentMap: {},
+                expandedStates: {},
+                tabTree: []
+            };
+        }
+        const tabs = await chrome.tabs.query({ windowId: w.id });
+        const { parentMap, expandedStates } = windowTrees[w.id];
+        const rootTabs = buildTreeStructureForWindow(
+            w.id,
+            tabs,
+            parentMap,
+            expandedStates
+        );
+        windowTrees[w.id].tabTree = rootTabs;
+    }
+    await saveWindowTrees(windowTrees);
 }
-initializeTabs();
+initializeAllWindows();
 
 // Listen for tab creation
 chrome.tabs.onCreated.addListener(async (tab) => {
-    await loadStorage();
+    const windowTrees = await loadWindowTrees();
 
-    // If the created tab has an openerTabId, store that in parentMap
+    // Ensure this window is tracked
+    if (!windowTrees[tab.windowId]) {
+        windowTrees[tab.windowId] = {
+            parentMap: {},
+            expandedStates: {},
+            tabTree: []
+        };
+    }
+
+    const winData = windowTrees[tab.windowId];
+
+    // If the tab has an openerTabId => treat as child
+    // If user pressed plus button or Ctrl+T, typically there's no openerTabId => root
     if (tab.openerTabId) {
-        parentMap[tab.id] = tab.openerTabId;
+        winData.parentMap[tab.id] = tab.openerTabId;
     }
 
-    // Save, then rebuild & store
-    await saveStorage();
-    const tabs = await chrome.tabs.query({});
-    const rootTabs = buildTreeStructure(tabs);
-    await chrome.storage.local.set({ tabTree: rootTabs });
+    // Rebuild the tree
+    const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+    winData.tabTree = buildTreeStructureForWindow(
+        tab.windowId,
+        tabs,
+        winData.parentMap,
+        winData.expandedStates
+    );
+    await saveWindowTrees(windowTrees);
+
+    // Trigger an update so popup/side panel can refresh
+    chrome.storage.local.set({ windowTrees });
 });
 
-// Listen for tab closing
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-    await loadStorage();
-
-    // Reassign children to parent's parent
-    reassignChildren(tabId);
-
-    // Also remove it from expandedStates if present
-    if (expandedStates[tabId] !== undefined) {
-        delete expandedStates[tabId];
+// Listen for tab removal
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+    const { windowId } = removeInfo;
+    if (typeof windowId === 'undefined') {
+        return;
     }
 
-    // Save, then rebuild & store
-    await saveStorage();
-    const tabs = await chrome.tabs.query({});
-    const rootTabs = buildTreeStructure(tabs);
-    await chrome.storage.local.set({ tabTree: rootTabs });
+    const windowTrees = await loadWindowTrees();
+    if (!windowTrees[windowId]) return;
+
+    const winData = windowTrees[windowId];
+    // Move children up
+    reassignChildren(winData, tabId);
+    // Remove expanded state if any
+    delete winData.expandedStates[tabId];
+
+    // Rebuild
+    const tabs = await chrome.tabs.query({ windowId });
+    winData.tabTree = buildTreeStructureForWindow(
+        windowId,
+        tabs,
+        winData.parentMap,
+        winData.expandedStates
+    );
+    await saveWindowTrees(windowTrees);
+
+    // Trigger update
+    chrome.storage.local.set({ windowTrees });
 });
 
-// Listen for tab updates (title, url, favicon, etc.)
+// Listen for tab updates (title, url, favIconUrl)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.title || changeInfo.url || changeInfo.favIconUrl) {
-        await loadStorage();
+        const windowTrees = await loadWindowTrees();
+        const wId = tab.windowId;
+        if (!windowTrees[wId]) return;
 
-        // Rebuild & store updated tree
-        const tabs = await chrome.tabs.query({});
-        const rootTabs = buildTreeStructure(tabs);
-        await chrome.storage.local.set({ tabTree: rootTabs });
+        const winData = windowTrees[wId];
+        const tabs = await chrome.tabs.query({ windowId: wId });
+        winData.tabTree = buildTreeStructureForWindow(
+            wId,
+            tabs,
+            winData.parentMap,
+            winData.expandedStates
+        );
+        await saveWindowTrees(windowTrees);
 
-        await saveStorage();
+        // Fire update
+        chrome.storage.local.set({ windowTrees });
+    }
+});
+
+// Listen for new windows
+chrome.windows.onCreated.addListener(async (window) => {
+    const windowTrees = await loadWindowTrees();
+    if (!windowTrees[window.id]) {
+        windowTrees[window.id] = {
+            parentMap: {},
+            expandedStates: {},
+            tabTree: []
+        };
+    }
+    if (window.type === 'normal') {
+        const tabs = await chrome.tabs.query({ windowId: window.id });
+        const { parentMap, expandedStates } = windowTrees[window.id];
+        windowTrees[window.id].tabTree = buildTreeStructureForWindow(
+            window.id,
+            tabs,
+            parentMap,
+            expandedStates
+        );
+    }
+    await saveWindowTrees(windowTrees);
+    chrome.storage.local.set({ windowTrees });
+});
+
+// Listen for window removal
+chrome.windows.onRemoved.addListener(async (windowId) => {
+    const windowTrees = await loadWindowTrees();
+    if (windowTrees[windowId]) {
+        delete windowTrees[windowId];
+        await saveWindowTrees(windowTrees);
+        chrome.storage.local.set({ windowTrees });
     }
 });

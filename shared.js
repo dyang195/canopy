@@ -8,6 +8,14 @@ class TabTreeView {
     }
 
     async init() {
+        // Find the current window
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+            this.windowId = tab.windowId;
+        } else {
+            this.windowId = 0; // fallback
+        }
+
         await this.loadTree();
         await this.createHeader();
         this.render();
@@ -15,12 +23,25 @@ class TabTreeView {
     }
 
     async loadTree() {
-        const { tabTree, storedExpandedStates } = await chrome.storage.local.get([
-            'tabTree',
-            'storedExpandedStates'
-        ]);
+        const { windowTrees } = await chrome.storage.local.get(['windowTrees']);
+        if (!windowTrees) {
+            this.windowTrees = {};
+        } else {
+            this.windowTrees = windowTrees;
+        }
+
+        // Ensure data for our window exists
+        if (!this.windowTrees[this.windowId]) {
+            this.windowTrees[this.windowId] = {
+                parentMap: {},
+                expandedStates: {},
+                tabTree: []
+            };
+        }
+
+        const { tabTree, expandedStates } = this.windowTrees[this.windowId];
         this.tabTree = tabTree || [];
-        this.expandedStates = storedExpandedStates || {};
+        this.expandedStates = expandedStates || {};
     }
 
     async createHeader() {
@@ -29,7 +50,7 @@ class TabTreeView {
         
         const title = document.createElement('h1');
         title.className = 'header-title';
-        title.textContent = 'Canopy - A tab tree visualizer';
+        title.textContent = 'Canopy - A Browser Tab Visualizer';
         
         const controls = document.createElement('div');
         controls.className = 'header-controls';
@@ -44,17 +65,11 @@ class TabTreeView {
             this.render();
         });
 
-        // Get current windowId
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab) {
-            this.windowId = tab.windowId;
-        }
-
+        // If in popup mode, show "Open in Side Panel" button
         if (this.mode === 'popup') {
             const viewToggle = document.createElement('button');
             viewToggle.className = 'button';
             
-            // Create a container for the text to allow different styles
             const textContainer = document.createElement('span');
             textContainer.innerHTML = '<strong>Open in Side Panel</strong> <span style="font-size: 11px; opacity: 0.8">(recommended)</span>';
             
@@ -81,28 +96,21 @@ class TabTreeView {
     }
 
     /**
-     * Recursively creates DOM elements for the node and its displayed children.
-     * Returns a DOM element (or null if it doesn’t pass the search).
+     * Recursively creates DOM for the node + its displayed children.
+     * Returns null if node & children don't match the search.
      */
     createNodeElement(node) {
-        // Does the node’s own title match the search?
         const nodeTitle = (node.title || '').toLowerCase();
         const nodeMatches = nodeTitle.includes(this.searchTerm);
-
-        // If the node doesn't match, but has children that do, we still show it
-        // We'll figure that out after we recursively call children
         let passesSearch = nodeMatches;
 
-        // Build a container for this node, always create it for now
         const div = document.createElement('div');
         div.className = 'tree-node';
 
-        // The row that displays tab info
         const tabItem = document.createElement('div');
         tabItem.className = 'tab-item';
 
-        // Expander or spacer
-        const isExpanded = (this.expandedStates[node.id] !== undefined)
+        const isExpanded = this.expandedStates[node.id] !== undefined
             ? this.expandedStates[node.id]
             : true;
 
@@ -113,12 +121,18 @@ class TabTreeView {
             expander.onclick = async (e) => {
                 e.stopPropagation();
                 this.expandedStates[node.id] = !isExpanded;
-                await chrome.storage.local.set({ storedExpandedStates: this.expandedStates });
+
+                // Persist expansions
+                if (this.windowTrees[this.windowId]) {
+                    this.windowTrees[this.windowId].expandedStates = this.expandedStates;
+                    await chrome.storage.local.set({ windowTrees: this.windowTrees });
+                }
+
                 this.render();
             };
             tabItem.appendChild(expander);
         } else {
-            // Add spacer for nodes without children
+            // Spacer for leaf nodes
             const spacer = document.createElement('div');
             spacer.style.width = '20px';
             tabItem.appendChild(spacer);
@@ -133,13 +147,12 @@ class TabTreeView {
             favicon.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%23f0f0f0"/></svg>';
         };
         
-        // Title
         const title = document.createElement('div');
         title.className = 'tab-title';
         title.textContent = node.title || new URL(node.url).hostname || 'New Tab';
         title.title = node.title;
         
-        // Actions: focus/close
+        // Actions
         const actions = document.createElement('div');
         actions.className = 'tab-actions';
         
@@ -167,37 +180,28 @@ class TabTreeView {
         tabItem.appendChild(actions);
         div.appendChild(tabItem);
 
-        // Now handle children (if expanded)
+        // Children
         const displayedChildren = [];
         if (node.children && node.children.length > 0 && isExpanded) {
             for (const child of node.children) {
-                // Recursively build the child's element
                 const childEl = this.createNodeElement(child);
-                // If childEl is not null, that means the child or its descendants passed
                 if (childEl) {
                     displayedChildren.push(childEl);
                 }
             }
         }
-
-        // If at least one child matched the search, we also display this node
         if (displayedChildren.length > 0) {
             passesSearch = true;
         }
-
-        // If this node doesn't pass and neither do its children, skip it
         if (!passesSearch) {
-            return null;
+            return null; 
         }
 
-        // Mark the last displayed child for L-shaped line
+        // Mark the last displayed child with .tree-node-last
         if (displayedChildren.length > 0) {
-            // The final displayed child gets the .tree-node-last
             const lastChild = displayedChildren[displayedChildren.length - 1];
             lastChild.classList.add('tree-node-last');
         }
-
-        // Append the children in order
         for (const childEl of displayedChildren) {
             div.appendChild(childEl);
         }
@@ -208,8 +212,7 @@ class TabTreeView {
     render() {
         const container = document.createElement('div');
         container.className = 'tree-content';
-        
-        // Build each root node
+
         const displayedRootNodes = [];
         for (const rootNode of this.tabTree) {
             const el = this.createNodeElement(rootNode);
@@ -218,18 +221,15 @@ class TabTreeView {
             }
         }
 
-        // Mark the last of the displayed root nodes
+        // Mark the last displayed root node
         if (displayedRootNodes.length > 0) {
-            const lastRoot = displayedRootNodes[ displayedRootNodes.length - 1 ];
+            const lastRoot = displayedRootNodes[displayedRootNodes.length - 1];
             lastRoot.classList.add('tree-node-last');
         }
-
-        // Append them
         for (const el of displayedRootNodes) {
             container.appendChild(el);
         }
 
-        // Clear old content and attach new
         const existingContent = this.container.querySelector('.tree-content');
         if (existingContent) {
             existingContent.remove();
@@ -238,9 +238,9 @@ class TabTreeView {
     }
 
     setupEventListeners() {
-        // Re-render if tabTree or storedExpandedStates changes in local storage
+        // Listen for changes to windowTrees in local storage
         chrome.storage.onChanged.addListener((changes) => {
-            if (changes.tabTree || changes.storedExpandedStates) {
+            if (changes.windowTrees) {
                 this.loadTree().then(() => this.render());
             }
         });
