@@ -4,7 +4,7 @@ Canopy lets you visualizes open tabs in a tree hierarchy, constructed by the his
 Allows collapsing, searching, and easy navigation/closing of tabs.
 
 ## Features
-
+ <img src="images/canopy_view.png" width="45%"> <img src="images/canopy_search.png" width="45%">
 - **Hierarchy**: Tracks parent/child relationships based on which tab you open new tabs from.
 - **Search**: Quickly filter open tabs by title.  
 - **Expand/Collapse**: Toggle branches to manage large sets of tabs.  
