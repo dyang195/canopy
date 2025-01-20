@@ -5,7 +5,6 @@
     "description": "Visualize your tab relationships in a tree structure",
     "permissions": [
         "tabs",
-        "webNavigation",
         "storage",
         "sidePanel"
     ],
